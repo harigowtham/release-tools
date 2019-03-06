@@ -19,7 +19,7 @@ function generate_release_notes ()
     local latest_version=$2
     local repo=$3
 
-    cd ${repo}
+    cd "${repo}" || exit
 
     # step 1: gather all BUG numbers from the commit messages
     #         use format=email so that BUG: is at the start of the line
@@ -28,17 +28,26 @@ function generate_release_notes ()
     # step 4: sort numeric, and only get occurences once (-u for unique)
     # step 5: use xargs to pass some of the bugs to the bugzilla command
     # step 6: show progress on the current terminal, and write to a file
-    git log --format=email $1..$2 | grep -w -i ^BUG \
+    oldformat=$(git log --format=email "${orig_version}..${latest_version}" | grep -w -i ^BUG \
         | cut -d: -f2 \
         | awk '/^[[:space:]]*[0-9]+[[:space:]]*$/{print $1}' \
-        | sort -n -u \
+        | sort -n -u)
+
+    newformat=$(git log --format=email "${orig_version}..${latest_version}" \
+        | grep -ow -E "([fF][iI][xX][eE][sS]|[uU][pP][dD][aA][tT][eE][sS])(:)?[[:space:]]+(gluster\\/glusterfs)?(bz)#[[:digit:]]+" \
+        | awk -F '#' '{print $2}' \
+        | sort -n -u)
+
+    bugs=$(echo "${oldformat}" "${newformat}" | tr " " "\\n" | sort -n -u)
+
+    echo "$bugs" \
         | xargs -r -n1 bugzilla query --outputformat='- [#%{id}](https://bugzilla.redhat.com/%{id}): %{summary}' -b \
         | tee /tmp/release_notes
 }
 
 function main ()
 {
-    generate_release_notes $1 $2 $3;
+    generate_release_notes "$1" "$2" "$3";
 }
 
 main "$@"
