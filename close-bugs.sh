@@ -1,6 +1,11 @@
 #!/bin/sh
+# Steps to run this
+# login to bugzilla from cmd.
+       # for this we use the bugzilla package which is installed. use command "bugzilla login"
+       # And enter the user name (example@email.com)and password.
+# Run as the command as per the example ./close-bugs.sh 5.12 https://lists.gluster.org/pipermail/gluster-users/2020-March/037797.html
 
-declare BUGSLIST VERSION ANNOUNCEURL
+declare BUGS VERSION ANNOUNCEURL
 
 if [ "x$DRY_RUN" != "x" ]; then
   DR="echo"
@@ -32,15 +37,48 @@ glusterfs-${VERSION} has been announced on the Gluster mailinglists [1], package
 		--comment="${COMMENT}" ${@}
 }
 
+get_bugs()
+{
+        echo "getting the release note for ${VERSION} to parse bugs"
+        wget https://raw.githubusercontent.com/gluster/glusterdocs/master/docs/release-notes/${VERSION}.md &> /dev/null
+        if [[ "$?" != 0 ]]; then
+                echo "Error getting the file from github."
+                echo "Make sure the release notes are merged in https://github.com/gluster/glusterdocs"
+                exit 1
+        else
+                echo "Downloaded the file successfully"
+        fi
+        echo "parsing release note ${VERSION}.md"
+        sed -n '/#[0-9]/p' ${VERSION}.md | sed 's/].*//' | tr -d '[]'| sed 's/ //' | sed 's/-#//' > /tmp/bugs
+        #removing the downloaded file
+        rm ${VERSION}.md
+}
+
+#remove this function
+query_bugs()
+{
+        echo "arg:${@}"
+        bugzilla query -b ${@}
+}
+
 check_for_command
 
-if [ $# -ne 3 ]; then
-  echo "Usage: $0 <file-with-bugs-to-be-closed> <version-string-for-current-release> <url-to-mailing-list-announcement>"
+if [ $# -ne 2 ]; then
+  echo "Usage: $0 <version-string-for-current-release> <url-to-mailing-list-announcement>"
   exit 1
 fi
 
-BUGSLIST=$1
-VERSION=$2
-ANNOUNCEURL=$3
+# the version that was just released.
+# example: 5.12
+VERSION=$1
+#the piper mail announcement mail about the release
+#example: https://lists.gluster.org/pipermail/gluster-users/2020-March/037797.html
+ANNOUNCEURL=$2
 
-cat $BUGSLIST | close_bugs
+get_bugs
+while IFS= read -r line
+do
+  close_bugs "$line"
+done < /tmp/bugs
+rm /tmp/bugs
+echo "Done"
